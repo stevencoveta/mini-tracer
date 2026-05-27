@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Tooling
+.agentic-meta/
+audit/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Output artifacts (the tool emits these to stdout — only stash if running examples)
+*.dot
+*.svg
