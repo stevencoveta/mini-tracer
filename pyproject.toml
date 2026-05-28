@@ -13,6 +13,9 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.1.0"]
 
+[project.scripts]
+mini-tracer = "mini_tracer.cli:main"
+
 [tool.setuptools]
-packages = ["mini_tracer"]
+packages = ["mini_tracer", "mini_tracer.formats"]
 package-dir = {"" = "src"}
