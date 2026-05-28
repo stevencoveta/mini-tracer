@@ -5,17 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mini-tracer"
 version = "0.1.0"
-description = "A small Python CLI that extracts static call graphs and emits them as JSON, Mermaid, or Graphviz DOT"
+description = "A small Python CLI that extracts static call graphs (see .agentic-meta/charter.md)"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = []
-
-[project.scripts]
-mini-tracer = "mini_tracer.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.1.0"]
 
 [tool.setuptools]
-packages = ["mini_tracer", "mini_tracer.formats"]
+packages = ["mini_tracer"]
 package-dir = {"" = "src"}
