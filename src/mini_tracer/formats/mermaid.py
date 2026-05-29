@@ -1,25 +1,14 @@
 """Mermaid flowchart output formatter."""
 
+from mini_tracer.formats._render import collect_edges
 
 
 def to_mermaid(graph: dict[str, list[str]]) -> str:
-    """
-    Emit call graph as Mermaid flowchart syntax.
-
-    Args:
-        graph: Call graph dict.
-
-    Returns:
-        Mermaid graph string.
-    """
+    """Emit call graph as Mermaid flowchart syntax."""
     lines = ["graph TD"]
-    edges: set[str] = set()
-
-    for func_name, callees in sorted(graph.items()):
-        for callee in callees:
-            edge_id = f"{func_name} --> {callee}"
-            if edge_id not in edges:
-                edges.add(edge_id)
-                lines.append(f"    {func_name} --> {callee}")
-
-    return "\n".join(lines) if edges else "graph TD\n    (empty)"
+    edges = collect_edges(graph)
+    if not edges:
+        lines.append("    (empty)")
+    for func_name, callee in edges:
+        lines.append(f"    {func_name} --> {callee}")
+    return "\n".join(lines)

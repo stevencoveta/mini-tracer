@@ -4,14 +4,9 @@ import json
 
 
 def to_json(graph: dict[str, list[str]], indent: int = 2) -> str:
-    """
-    Emit call graph as JSON.
+    """Emit call graph as JSON.
 
-    Args:
-        graph: Call graph dict.
-        indent: JSON indentation (default 2).
-
-    Returns:
-        JSON string representation of the graph.
+    No dedup is needed here — dict naturally suppresses duplicate keys,
+    and we expect callers to have already used the standard list form.
     """
     return json.dumps(graph, indent=indent, sort_keys=True)

@@ -1,26 +1,12 @@
 """Graphviz DOT output formatter."""
 
+from mini_tracer.formats._render import collect_edges
 
 
 def to_dot(graph: dict[str, list[str]]) -> str:
-    """
-    Emit call graph as Graphviz DOT syntax.
-
-    Args:
-        graph: Call graph dict.
-
-    Returns:
-        DOT format string suitable for `dot -Tpng`.
-    """
-    lines = ['digraph G {']
-    edges: set[str] = set()
-
-    for func_name, callees in sorted(graph.items()):
-        for callee in callees:
-            edge = f'    "{func_name}" -> "{callee}";'
-            if edge not in edges:
-                edges.add(edge)
-                lines.append(edge)
-
-    lines.append('}')
-    return '\n'.join(lines)
+    """Emit call graph as Graphviz DOT syntax."""
+    lines = ["digraph G {"]
+    for func_name, callee in collect_edges(graph):
+        lines.append(f'    "{func_name}" -> "{callee}";')
+    lines.append("}")
+    return "\n".join(lines)

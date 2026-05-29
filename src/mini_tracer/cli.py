@@ -10,14 +10,15 @@ from mini_tracer.formats.mermaid import to_mermaid
 from mini_tracer.resolver import resolve
 from mini_tracer.walker import walk_file
 
+_FORMATTERS: dict[str, object] = {
+    "json": to_json,
+    "mermaid": to_mermaid,
+    "dot": to_dot,
+}
+
 
 def main() -> int:
-    """
-    Parse arguments and emit call graph in requested format.
-
-    Returns:
-        Exit code (0 on success, 1 on error).
-    """
+    """Parse arguments and emit call graph in requested format."""
     parser = argparse.ArgumentParser(
         prog="mini-tracer",
         description="Static Python call-graph extractor.",
@@ -28,64 +29,46 @@ def main() -> int:
     )
     parser.add_argument(
         "--format",
-        choices=["json", "mermaid", "dot"],
+        choices=list(_FORMATTERS),
         default="json",
         help="Output format (default: json).",
     )
 
     args = parser.parse_args()
-
     path = Path(args.path)
+    fmt = _FORMATTERS[args.format]
 
     if not path.exists():
         print(f"Error: path does not exist: {path}", file=sys.stderr)
         return 1
 
     graph = _build_graph(path)
-
-    if not graph:
-        # Empty graph case
-        if args.format == "json":
-            output = to_json({})
-        elif args.format == "mermaid":
-            output = to_mermaid({})
-        else:  # dot
-            output = to_dot({})
-    else:
-        resolved = resolve(graph, str(path.parent if path.is_file() else path))
-        if args.format == "json":
-            output = to_json(resolved)
-        elif args.format == "mermaid":
-            output = to_mermaid(resolved)
-        else:  # dot
-            output = to_dot(resolved)
-
-    print(output)
+    resolved = (
+        resolve(graph, str(path.parent if path.is_file() else path))
+    ) if graph else graph
+    print(fmt(resolved))
     return 0
 
 
 def _build_graph(path: Path) -> dict[str, list[str]]:
-    """
-    Build call graph from a file or directory.
+    """Build call graph from a file or directory.
 
-    Args:
-        path: File or directory path.
-
-    Returns:
-        Merged call graph from all Python files found.
-    """
-    graph: dict[str, list[str]] = {}
-
+    Duplicate edges across files are removed."""
     if path.is_file():
         return walk_file(str(path))
 
-    for py_file in path.glob("**/*.py"):
+    graph: dict[str, list[str]] = {}
+    for py_file in path.rglob("*.py"):
         file_graph = walk_file(str(py_file))
         for func, callees in file_graph.items():
             if func not in graph:
                 graph[func] = []
-            graph[func].extend(callees)
-
+            # O(n) dedup — cheap for small graphs (typical v1 use).
+            seen = set(graph[func])
+            for c in callees:
+                if c not in seen:
+                    seen.add(c)
+                    graph[func].append(c)
     return graph
 
 

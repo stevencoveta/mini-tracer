@@ -4,47 +4,41 @@ import ast
 from pathlib import Path
 
 
-def resolve(
-    graph: dict[str, list[str]], base_dir: str = "."
-) -> dict[str, list[str]]:
-    """
-    Resolve unqualified names in a call graph to qualified ones.
+def resolve(graph: dict[str, list[str]], base_dir: str = ".") -> dict[str, list[str]]:
+    """Resolve unqualified names in a call graph to qualified ones.
 
     Builds import tables from all Python files in base_dir, then replaces
-    bare function names like 'foo' with module-qualified names like 'module.foo'
-    where possible. Falls back to bare names if resolution fails.
+    bare function names with module-qualified names when the import table
+    says they came from somewhere else (e.g. "from utils import foo" makes
+    a bare "foo" resolve to "utils.foo").
 
-    Args:
-        graph: Call graph with potentially unqualified names.
-        base_dir: Root directory to scan for Python files (for imports).
-
-    Returns:
-        Resolved graph with qualified names where possible.
+    v2+ will add deeper cross-module tracking; v1 resolves via the import table.
     """
     base_path = Path(base_dir)
     import_tables = _build_import_tables(base_path)
-    resolved = {}
 
+    # Pick the table for the file that owns the caller — v1 best-effort:
+    # for a simple project every caller lives in the same import universe.
+    merged: dict[str, str] = {}
+    for table in import_tables.values():
+        merged.update(table)
+
+    resolved: dict[str, list[str]] = {}
     for func_name, callees in graph.items():
         resolved_callees = []
         for callee in callees:
-            resolved_name = _resolve_name(callee, func_name, import_tables)
-            resolved_callees.append(resolved_name)
+            # Already qualified  (contains a dot) is left alone.
+            if "." not in callee and callee in merged:
+                resolved_callees.append(merged[callee])
+            else:
+                resolved_callees.append(callee)
         resolved[func_name] = resolved_callees
 
     return resolved
 
 
 def _build_import_tables(base_dir: Path) -> dict[str, dict[str, str]]:
-    """
-    Build a map of module filepath -> {imported_name -> qualified_name}.
-
-    Args:
-        base_dir: Root directory to scan for Python files.
-
-    Returns:
-        Dict mapping filepath to import table for that file.
-    """
+    """Build a map of module filepath -> {imported_name -> qualified_name}."""
     import_tables: dict[str, dict[str, str]] = {}
 
     for py_file in base_dir.glob("**/*.py"):
@@ -63,7 +57,11 @@ def _build_import_tables(base_dir: Path) -> dict[str, dict[str, str]]:
                     name = alias.asname if alias.asname else alias.name
                     if alias.name == "*":
                         continue
-                    import_table[name] = f"{module}.{alias.name}"
+                    qualified = f"{module}.{alias.name}" if module else alias.name
+                    # Intra-repo relative import heuristic: strip .. prefix.
+                    if qualified.startswith("."):
+                        qualified = qualified.lstrip(".")
+                    import_table[name] = qualified
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     name = alias.asname if alias.asname else alias.name
@@ -72,27 +70,3 @@ def _build_import_tables(base_dir: Path) -> dict[str, dict[str, str]]:
         import_tables[str(py_file)] = import_table
 
     return import_tables
-
-
-def _resolve_name(
-    callee: str,
-    caller: str,
-    import_tables: dict[str, dict[str, str]],
-) -> str:
-    """
-    Resolve a callee name using import tables.
-
-    Simple greedy strategy: for now, just return the name as-is.
-    Full import resolution across modules is v2+.
-
-    Args:
-        callee: The name being called.
-        caller: The function calling it.
-        import_tables: Map of import tables by filepath.
-
-    Returns:
-        Resolved name, or original if unresolved.
-    """
-    # v1: return callee unchanged; v2 will do proper import tracing.
-    _ = caller, import_tables
-    return callee

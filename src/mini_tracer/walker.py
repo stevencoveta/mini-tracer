@@ -1,18 +1,25 @@
 """AST walk to collect function/method definitions and call edges per file."""
 
 import ast
+import builtins
+
+# Built-in names so we never emit call-graph edges for the stdlib itself.
+_BUILTIN_NAMES: set[str] = set(dir(builtins)) | {
+    "isinstance", "hasattr", "getattr", "setattr", "issubclass",
+    "reversed", "sorted", "globals", "locals", "vars", "dir",
+    "len", "repr", "str", "int", "float", "bool", "list", "dict",
+    "set", "tuple", "next", "iter", "enumerate", "zip", "range",
+    "map", "filter", "sum", "min", "max", "any", "all",
+}
 
 
 def walk_file(filepath: str) -> dict[str, list[str]]:
     """
     Walk a single Python file and extract the call graph.
 
-    Args:
-        filepath: Path to a .py file.
-
-    Returns:
-        Dict mapping qualified function/method name to list of called names.
-        E.g. {'foo': ['bar', 'baz'], 'MyClass.method': ['foo', 'other.func']}
+    Returns a dict mapping qualified function/method name to list of
+    called names.  Only programmer-written function calls are kept:
+    bare names (foo()) and same-class self calls (self.bar()).
     """
     try:
         with open(filepath, encoding="utf-8") as f:
@@ -24,30 +31,26 @@ def walk_file(filepath: str) -> dict[str, list[str]]:
     except SyntaxError:
         return {}
 
-    collector = CallCollector(filepath)
+    collector = _CallCollector()
     collector.visit(tree)
     return collector.graph
 
 
-class CallCollector(ast.NodeVisitor):
+class _CallCollector(ast.NodeVisitor):
     """Visit AST nodes and collect function definitions and calls."""
 
-    def __init__(self, filepath: str):
-        """Initialise with the file path being analysed."""
-        self.filepath = filepath
+    def __init__(self):
         self.graph: dict[str, list[str]] = {}
         self.current_class: str = ""
         self.current_function: str = ""
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        """Record class and visit methods inside it."""
         old_class = self.current_class
         self.current_class = node.name
         self.generic_visit(node)
         self.current_class = old_class
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Record function/method definition and collect calls in its body."""
         old_func = self.current_function
         if self.current_class:
             self.current_function = f"{self.current_class}.{node.name}"
@@ -58,33 +61,32 @@ class CallCollector(ast.NodeVisitor):
         self.generic_visit(node)
         self.current_function = old_func
 
-    # ast.NodeVisitor requires camelCase method names to match AST node names.
     visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815
 
     def visit_Call(self, node: ast.Call) -> None:
-        """Record a function call."""
+        """Record a function call: only bare names and self.x inside methods."""
         if not self.current_function:
             self.generic_visit(node)
             return
-        callee = self._extract_name(node.func)
-        # Inside a class, self.method_b() resolves to method_b.
-        if callee and self.current_class and callee.startswith("self."):
-            callee = callee[5:]
+
+        callee = _extract_name(node.func, self.current_class)
         if callee:
             self.graph[self.current_function].append(callee)
         self.generic_visit(node)
 
-    def _extract_name(self, node: ast.expr) -> str:
-        """Extract function name from a Call node's func attribute."""
-        if isinstance(node, ast.Name):
-            return node.id
-        if isinstance(node, ast.Attribute):
-            parts = []
-            current = node
-            while isinstance(current, ast.Attribute):
-                parts.append(current.attr)
-                current = current.value
-            if isinstance(current, ast.Name):
-                parts.append(current.id)
-                return ".".join(reversed(parts))
-        return ""
+
+def _extract_name(func: ast.expr, current_class: str) -> str:
+    """Return callee name for a Call.func, or '' if it's not caller code.
+
+    Rules (v1):
+      - bare Name(foo)     → "foo"               (function call)
+      - self.X(Y)          → "X" if in class     (same-class method call)
+      - everything else    → ""                  (std lib / temp var / ...)
+    """
+    if isinstance(func, ast.Name):
+        name = func.id
+        return "" if name in _BUILTIN_NAMES else name
+    if isinstance(func, ast.Attribute):
+        if isinstance(func.value, ast.Name) and func.value.id == "self":
+            return func.attr if current_class else ""
+    return ""
