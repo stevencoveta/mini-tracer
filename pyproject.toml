@@ -27,6 +27,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 88
 respect-gitignore = true
+exclude = ["tests/fixtures/syntax_error.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
