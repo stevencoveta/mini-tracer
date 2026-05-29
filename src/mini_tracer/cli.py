@@ -7,7 +7,7 @@ from pathlib import Path
 from mini_tracer.formats.dot import to_dot
 from mini_tracer.formats.json_out import to_json
 from mini_tracer.formats.mermaid import to_mermaid
-from mini_tracer.resolver import resolve
+from mini_tracer.resolver import resolve, walk_dir
 from mini_tracer.walker import walk_file
 
 _FORMATTERS: dict[str, object] = {
@@ -43,33 +43,20 @@ def main() -> int:
         return 1
 
     graph = _build_graph(path)
-    resolved = (
-        resolve(graph, str(path.parent if path.is_file() else path))
-    ) if graph else graph
-    print(fmt(resolved))
+    print(fmt(graph))
     return 0
 
 
 def _build_graph(path: Path) -> dict[str, list[str]]:
-    """Build call graph from a file or directory.
+    """Build a resolved call graph from a file or directory.
 
-    Duplicate edges across files are removed."""
+    For a single file, wraps ``walk_file`` + ``resolve``.
+    For a directory, delegates to ``walk_dir`` which handles both steps.
+    """
     if path.is_file():
-        return walk_file(str(path))
-
-    graph: dict[str, list[str]] = {}
-    for py_file in path.rglob("*.py"):
-        file_graph = walk_file(str(py_file))
-        for func, callees in file_graph.items():
-            if func not in graph:
-                graph[func] = []
-            # O(n) dedup — cheap for small graphs (typical v1 use).
-            seen = set(graph[func])
-            for c in callees:
-                if c not in seen:
-                    seen.add(c)
-                    graph[func].append(c)
-    return graph
+        raw = walk_file(str(path))
+        return resolve({str(path): raw})
+    return walk_dir(path)
 
 
 if __name__ == "__main__":
